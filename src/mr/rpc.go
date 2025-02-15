@@ -1,23 +1,38 @@
 package mr
 
-// RPC definitions
-// remember to capitalize all names
-
 import (
+	"fmt"
 	"os"
 	"strconv"
 )
 
-// example of how to declare the argument and reply type for an RPC method
-type ExampleArgs struct {
-	X int
+type GetTaskReq struct {
 }
 
-type ExampleReply struct {
-	Y int
+type GetTaskRes struct {
+	Filename string
+	NReduce  int
+	TaskType TaskType
 }
 
-// add your RPC definitions here
+// type TaskType int
+
+// const (
+// 	TaskTypeMap TaskType = iota
+// 	TaskTypeReduce
+// 	TaskTypeNoJob
+// )
+
+func (t *GetTaskRes) String() string {
+	return fmt.Sprintf("Filename: %s, NReduce: %d, TaskType: %d", t.Filename, t.NReduce, t.TaskType)
+}
+
+type TaskDoneReq struct {
+	Filename string
+}
+
+type TaskDoneRes struct {
+}
 
 // create a unique-ish UNIX-domain socket name
 // in /var/tmp, for the coordinator.

@@ -57,20 +57,45 @@ mkdir mr-tmp || exit 1
 cd mr-tmp || exit 1
 rm -f mr-*
 
+echo 'building...'
+
 # make sure software is freshly built.
-(cd ../../mrapps && go clean)
-(cd .. && go clean)
-(cd ../../mrapps && go build $RACE -buildmode=plugin wc.go) || exit 1
-(cd ../../mrapps && go build $RACE -buildmode=plugin indexer.go) || exit 1
-(cd ../../mrapps && go build $RACE -buildmode=plugin mtiming.go) || exit 1
-(cd ../../mrapps && go build $RACE -buildmode=plugin rtiming.go) || exit 1
-(cd ../../mrapps && go build $RACE -buildmode=plugin jobcount.go) || exit 1
-(cd ../../mrapps && go build $RACE -buildmode=plugin early_exit.go) || exit 1
-(cd ../../mrapps && go build $RACE -buildmode=plugin crash.go) || exit 1
-(cd ../../mrapps && go build $RACE -buildmode=plugin nocrash.go) || exit 1
-(cd .. && go build $RACE mrcoordinator.go) || exit 1
-(cd .. && go build $RACE mrworker.go) || exit 1
-(cd .. && go build $RACE mrsequential.go) || exit 1
+# (cd ../../mrapps && go clean)
+# (cd .. && go clean)
+# (cd ../../mrapps && go build $RACE -buildmode=plugin wc.go) || exit 1
+# (cd ../../mrapps && go build $RACE -buildmode=plugin indexer.go) || exit 1
+# (cd ../../mrapps && go build $RACE -buildmode=plugin mtiming.go) || exit 1
+# (cd ../../mrapps && go build $RACE -buildmode=plugin rtiming.go) || exit 1
+# (cd ../../mrapps && go build $RACE -buildmode=plugin jobcount.go) || exit 1
+# (cd ../../mrapps && go build $RACE -buildmode=plugin early_exit.go) || exit 1
+# (cd ../../mrapps && go build $RACE -buildmode=plugin crash.go) || exit 1
+# (cd ../../mrapps && go build $RACE -buildmode=plugin nocrash.go) || exit 1
+# (cd .. && go build $RACE mrcoordinator.go) || exit 1
+# (cd .. && go build $RACE mrworker.go) || exit 1
+# (cd .. && go build $RACE mrsequential.go) || exit 1
+
+# Build plugins in parallel
+(cd ../../mrapps && {
+    go build $RACE -buildmode=plugin wc.go &
+    go build $RACE -buildmode=plugin indexer.go &
+    go build $RACE -buildmode=plugin mtiming.go &
+    go build $RACE -buildmode=plugin rtiming.go &
+    go build $RACE -buildmode=plugin jobcount.go &
+    go build $RACE -buildmode=plugin early_exit.go &
+    go build $RACE -buildmode=plugin crash.go &
+    go build $RACE -buildmode=plugin nocrash.go &
+    wait
+}) || exit 1
+
+# Build main executables in parallel
+(cd .. && {
+    go build $RACE mrcoordinator.go &
+    go build $RACE mrworker.go &
+    go build $RACE mrsequential.go &
+    wait
+}) || exit 1
+
+echo 'finished building'
 
 failed_any=0
 
