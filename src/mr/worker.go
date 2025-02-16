@@ -77,7 +77,7 @@ func runMapTask(workerId int, files []string, nReduce int, mapf func(string, str
 
 		for _, kv := range outputKv {
 			// filename format: m-out-<worker-id>-<reducer-id>
-			outputFilename := fmt.Sprintf("m-out-%d-%d", workerId, ihash(kv.Key)%nReduce)
+			outputFilename := fmt.Sprintf("tempm-out-%d-%d", workerId, ihash(kv.Key)%nReduce)
 
 			// open file and create if it doesn't exist yet
 			outputFile, err := os.OpenFile(outputFilename, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0666)
@@ -129,7 +129,7 @@ func runReduceTask(files []string, reducef func(string, []string) string) error 
 	for key, values := range m {
 		result := reducef(key, values)
 
-		outputFilename := fmt.Sprintf("mr-out-%s", reduceId)
+		outputFilename := fmt.Sprintf("tempmr-out-%s", reduceId)
 		outputFile, err := os.OpenFile(outputFilename, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0666)
 		if err != nil {
 			return fmt.Errorf("runReduceTask OpenFile(%s) %w", outputFilename, err)

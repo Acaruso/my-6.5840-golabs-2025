@@ -17,6 +17,7 @@ type Coordinator struct {
 	mutex          sync.Mutex
 	tasks          []task
 	workers        []worker
+	filesToIgnore  map[string]bool
 	numMapTasks    int
 	numReduceTasks int
 	phase          phase
@@ -37,6 +38,7 @@ const (
 	taskStatusIdle taskStatus = iota
 	taskStatusInProgress
 	taskStatusCompleted
+	taskStatusTimedOut
 	taskStatusFailed
 )
 
@@ -136,17 +138,13 @@ func (c *Coordinator) TaskDone(req *TaskDoneReq, res *TaskDoneRes) error {
 		}
 	}
 
+	err := c.renameTempFiles(task.files)
+	if err != nil {
+		return fmt.Errorf("TaskDone renameTempFiles: %w", err)
+	}
+
 	return nil
 }
-
-// func (c *Coordinator) findTask(fileName string) *task {
-// 	for i, job := range c.tasks {
-// 		if job.filename == fileName {
-// 			return &c.tasks[i]
-// 		}
-// 	}
-// 	return nil
-// }
 
 func (c *Coordinator) createMapJobs(files []string) {
 	c.tasks = make([]task, len(files))
@@ -184,16 +182,16 @@ func (c *Coordinator) createReduceJobs() error {
 	return nil
 }
 
-// func (c *Coordinator) createShutdownJobs() error {
-// 	for i := 0; i < c.numWorkers; i++ {
-// 		task := task{
-// 			status:   taskStatusIdle,
-// 			taskType: TaskTypeShutdown,
-// 		}
-// 		c.tasks = append(c.tasks, task)
-// 	}
-// 	return nil
-// }
+func (c *Coordinator) renameTempFiles(filenames []string) error {
+	for _, filename := range filenames {
+		newFilename := strings.Replace(filename, "temp", "", -1)
+		err := os.Rename(filename, newFilename)
+		if err != nil {
+			return fmt.Errorf("Failed to rename file %s to %s: %v", filename, newFilename, err)
+		}
+	}
+	return nil
+}
 
 // `main/mrcoordinator.go` calls `Done` periodically to check if the entire job has finished
 func (c *Coordinator) Done() bool {
@@ -213,23 +211,13 @@ func (c *Coordinator) Done() bool {
 	return true
 }
 
-func (c *Coordinator) printTasks() {
-	fmt.Println("tasks ------------------------------")
+func (c *Coordinator) checkTasks() {
 	for _, task := range c.tasks {
-		fmt.Printf("%v\n", task)
-	}
-	fmt.Println("end tasks ------------------------------")
-}
+		if time.Now().Unix() > task.startTime+c.timeoutSecs {
 
-// func (c *Coordinator) reAssignJobs() {
-// 	for i, job := range c.jobs {
-//         if job.status == inProgress && (time.Now().Unix() - job.startTime >= c.timeoutSecs) {
-//             newJob := job
-//             newJob.status = idle
-//             c.jobs = append(c.jobs, newJob)
-//         }
-// 	}
-// }
+		}
+	}
+}
 
 // start a thread that listens for RPCs from `worker.go`
 func (c *Coordinator) server() {
@@ -243,4 +231,12 @@ func (c *Coordinator) server() {
 		log.Fatal("listen error:", e)
 	}
 	go http.Serve(l, nil)
+}
+
+func (c *Coordinator) printTasks() {
+	fmt.Println("tasks ------------------------------")
+	for _, task := range c.tasks {
+		fmt.Printf("%v\n", task)
+	}
+	fmt.Println("end tasks ------------------------------")
 }
