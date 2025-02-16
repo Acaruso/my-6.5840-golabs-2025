@@ -21,30 +21,40 @@ type KeyValue struct {
 func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
 
+	workerId, err := rpcRegisterWorker()
+	if err != nil {
+		log.Fatal("error in rpcRegisterWorker")
+	}
+
 	for {
-		res, err := rpcGetTask()
+		res, err := rpcGetTask(workerId)
 		if err != nil {
 			// TODO: handle error
+			log.Fatal("error in rpcGetTask")
 		}
 
 		switch res.TaskType {
 		case TaskTypeMap:
-			err := runMapTask(res.Filename, res.NReduce, mapf)
+			err := runMapTask(workerId, res.Files, res.NReduce, mapf)
 			if err != nil {
 				// TODO: handle error
+				log.Fatal("error in runMapTask")
 			}
-			_, err = rpcTaskDone(res.Filename)
+			_, err = rpcTaskDone(workerId, res.TaskId)
 			if err != nil {
 				// TODO: handle error
+				log.Fatal("error in rpcTaskDone")
 			}
 		case TaskTypeReduce:
-			err = runReduceTask(res.Filename, reducef)
+			err = runReduceTask(res.Files, reducef)
 			if err != nil {
 				// TOOD: handle error
+				log.Fatal("error in runReduceTask")
 			}
-			_, err = rpcTaskDone(res.Filename)
+			_, err = rpcTaskDone(workerId, res.TaskId)
 			if err != nil {
 				// TOOD: handle error
+				log.Fatal("error in rpcTaskDone")
 			}
 		case TaskTypeNoJob:
 			time.Sleep(5 * time.Second)
@@ -54,61 +64,72 @@ func Worker(mapf func(string, string) []KeyValue,
 	}
 }
 
-func runMapTask(filename string, nReduce int, mapf func(string, string) []KeyValue) error {
+func runMapTask(workerId int, files []string, nReduce int, mapf func(string, string) []KeyValue) error {
 	fmt.Println("runMapTask")
 
-	content, err := getFileContent(filename)
-	if err != nil {
-		return fmt.Errorf("runMapTask getFileContent(%s): %w", filename, err)
-	}
-
-	outputKv := mapf(filename, content)
-
-	for _, kv := range outputKv {
-		outputFilename := fmt.Sprintf("map-output-%d", ihash(kv.Key)%nReduce)
-
-		// open file and create if it doesn't exist yet
-		// opening with `O_APPEND` makes small writes atomic
-		outputFile, err := os.OpenFile(outputFilename, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0666)
+	for _, filename := range files {
+		content, err := getFileContent(filename)
 		if err != nil {
-			return fmt.Errorf("runMapTask OpenFile(%s) %w", outputFilename, err)
+			return fmt.Errorf("runMapTask getFileContent(%s): %w", filename, err)
 		}
 
-		fmt.Fprintf(outputFile, "%v %v\n", kv.Key, kv.Value)
+		outputKv := mapf(filename, content)
 
-		outputFile.Close()
+		for _, kv := range outputKv {
+			// filename format: m-out-<worker-id>-<reducer-id>
+			outputFilename := fmt.Sprintf("m-out-%d-%d", workerId, ihash(kv.Key)%nReduce)
+
+			// open file and create if it doesn't exist yet
+			outputFile, err := os.OpenFile(outputFilename, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0666)
+			if err != nil {
+				return fmt.Errorf("runMapTask OpenFile(%s) %w", outputFilename, err)
+			}
+
+			fmt.Fprintf(outputFile, "%v %v\n", kv.Key, kv.Value)
+
+			outputFile.Close()
+		}
 	}
 
 	return nil
 }
 
-func runReduceTask(filename string, reducef func(string, []string) string) error {
-	filenameParts := strings.Split(filename, "-")
-	taskNum := filenameParts[2]
-
-	content, err := getFileContent(filename)
-	if err != nil {
-		return fmt.Errorf("runReduceTask getFileContent(%s): %w", filename, err)
+func runReduceTask(files []string, reducef func(string, []string) string) error {
+	if len(files) == 0 {
+		// TODO: handle this?
+		return nil
 	}
 
-	lines := strings.Split(content, "\n")
+	// filename format: m-out-<worker-id>-<reducer-id>
+	filenameParts := strings.Split(files[0], "-")
+	reduceId := filenameParts[3]
 
 	m := make(map[string][]string)
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
+
+	for _, filename := range files {
+		content, err := getFileContent(filename)
+		if err != nil {
+			return fmt.Errorf("runReduceTask getFileContent(%s): %w", filename, err)
 		}
-		parts := strings.Split(line, " ")
-		key := parts[0]
-		value := parts[1]
-		m[key] = append(m[key], value)
+
+		lines := strings.Split(content, "\n")
+
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			parts := strings.Split(line, " ")
+			key := parts[0]
+			value := parts[1]
+			m[key] = append(m[key], value)
+		}
 	}
 
 	for key, values := range m {
 		result := reducef(key, values)
 
-		outputFilename := fmt.Sprintf("mr-out-%s", taskNum)
+		outputFilename := fmt.Sprintf("mr-out-%s", reduceId)
 		outputFile, err := os.OpenFile(outputFilename, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0666)
 		if err != nil {
 			return fmt.Errorf("runReduceTask OpenFile(%s) %w", outputFilename, err)
@@ -143,8 +164,26 @@ func ihash(key string) int {
 	return int(h.Sum32() & 0x7fffffff)
 }
 
-func rpcGetTask() (GetTaskRes, error) {
-	req := GetTaskReq{}
+func rpcRegisterWorker() (int, error) {
+	req := RegisterWorkerReq{}
+	res := RegisterWorkerRes{}
+
+	fmt.Printf("rpcRegisterWorker req: %v\n", req)
+
+	ok := call("Coordinator.RegisterWorker", &req, &res)
+	if !ok {
+		return 0, fmt.Errorf("rpcGetTask failed")
+	}
+
+	fmt.Printf("rpcRegisterWorker res: %v\n", res)
+
+	return res.WorkerId, nil
+}
+
+func rpcGetTask(workerId int) (GetTaskRes, error) {
+	req := GetTaskReq{
+		WorkerId: workerId,
+	}
 	res := GetTaskRes{}
 
 	fmt.Printf("rpcGetTask req: %v\n", req)
@@ -159,9 +198,10 @@ func rpcGetTask() (GetTaskRes, error) {
 	return res, nil
 }
 
-func rpcTaskDone(fileName string) (TaskDoneRes, error) {
+func rpcTaskDone(workerId int, taskId int) (TaskDoneRes, error) {
 	req := TaskDoneReq{
-		Filename: fileName,
+		WorkerId: workerId,
+		TaskId:   taskId,
 	}
 	res := TaskDoneRes{}
 

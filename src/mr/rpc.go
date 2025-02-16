@@ -4,34 +4,52 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 )
 
+type RegisterWorkerReq struct {
+}
+
+type RegisterWorkerRes struct {
+	WorkerId int
+}
+
+func (r RegisterWorkerRes) String() string {
+	return fmt.Sprintf("{WorkerId: %d}", r.WorkerId)
+}
+
 type GetTaskReq struct {
+	WorkerId int
 }
 
 type GetTaskRes struct {
-	Filename string
+	Files    []string
 	NReduce  int
 	TaskType TaskType
+	TaskId   int
 }
 
-// type TaskType int
+func (r GetTaskReq) String() string {
+	return fmt.Sprintf("{WorkerId: %d}", r.WorkerId)
+}
 
-// const (
-// 	TaskTypeMap TaskType = iota
-// 	TaskTypeReduce
-// 	TaskTypeNoJob
-// )
-
-func (t *GetTaskRes) String() string {
-	return fmt.Sprintf("Filename: %s, NReduce: %d, TaskType: %d", t.Filename, t.NReduce, t.TaskType)
+func (r GetTaskRes) String() string {
+	return fmt.Sprintf("{Files: [%s], NReduce: %d, TaskType: %d}",
+		strings.Join(r.Files, ", "),
+		r.NReduce,
+		r.TaskType)
 }
 
 type TaskDoneReq struct {
-	Filename string
+	WorkerId int
+	TaskId   int
 }
 
 type TaskDoneRes struct {
+}
+
+func (r TaskDoneReq) String() string {
+	return fmt.Sprintf("{WorkerId: %d, TaskId: %d}", r.WorkerId, r.TaskId)
 }
 
 // create a unique-ish UNIX-domain socket name

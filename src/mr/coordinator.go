@@ -8,6 +8,7 @@ import (
 	"net/rpc"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -15,6 +16,7 @@ import (
 type Coordinator struct {
 	mutex          sync.Mutex
 	tasks          []task
+	workers        []worker
 	numMapTasks    int
 	numReduceTasks int
 	phase          phase
@@ -23,7 +25,7 @@ type Coordinator struct {
 }
 
 type task struct {
-	filename  string
+	files     []string
 	status    taskStatus
 	startTime int64
 	taskType  TaskType
@@ -47,6 +49,10 @@ const (
 	TaskTypeShutdown
 )
 
+type worker struct {
+	taskId int
+}
+
 type phase int
 
 const (
@@ -60,60 +66,55 @@ const (
 // `nReduce` is the number of reduce tasks to use
 func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	c := Coordinator{}
-	c.tasks = make([]task, len(files))
-	for i, file := range files {
-		c.tasks[i].filename = file
-		c.tasks[i].taskType = TaskTypeMap
-	}
+	c.createMapJobs(files)
+	c.numMapTasks = len(c.tasks)
 	c.nReduce = nReduce
 	c.phase = phaseMap
 	c.timeoutSecs = 10
-	c.numMapTasks = len(c.tasks)
 	c.server()
 	return &c
 }
 
-// func (c *Coordinator) RegisterWorker(req *GetTaskReq, res *GetTaskRes) error {
-// }
+func (c *Coordinator) RegisterWorker(req *RegisterWorkerReq, res *RegisterWorkerRes) error {
+	c.workers = append(c.workers, worker{})
+	res.WorkerId = len(c.workers) - 1
+	return nil
+}
 
 func (c *Coordinator) GetTask(req *GetTaskReq, res *GetTaskRes) error {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
-	task := c.findIdleTask()
+	taskId, task := c.findIdleTask()
 	if task == nil {
 		res.TaskType = TaskTypeNoJob
+		c.workers[req.WorkerId].taskId = taskId
 		return nil
 	}
 	task.status = taskStatusInProgress
 	task.startTime = time.Now().Unix()
-	res.Filename = task.filename
+	res.Files = task.files
 	res.NReduce = c.nReduce
-	if task.taskType == TaskTypeMap {
-		res.TaskType = TaskTypeMap
-	} else if task.taskType == TaskTypeReduce {
-		res.TaskType = TaskTypeReduce
-	}
+	res.TaskType = task.taskType
+	c.workers[req.WorkerId].taskId = taskId
 	return nil
 }
 
-func (c *Coordinator) findIdleTask() *task {
+func (c *Coordinator) findIdleTask() (int, *task) {
 	for i, task := range c.tasks {
 		if task.status == taskStatusIdle {
-			return &c.tasks[i]
+			return i, &c.tasks[i]
 		}
 	}
-	return nil
+	return 0, nil
 }
 
 func (c *Coordinator) TaskDone(req *TaskDoneReq, res *TaskDoneRes) error {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
-	task := c.findTask(req.Filename)
-	if task == nil {
-		return nil
-	}
+	// task := c.findTask(req.Filename)
+	task := c.tasks[req.TaskId]
 
 	task.status = taskStatusCompleted
 
@@ -139,27 +140,43 @@ func (c *Coordinator) TaskDone(req *TaskDoneReq, res *TaskDoneRes) error {
 	return nil
 }
 
-func (c *Coordinator) findTask(fileName string) *task {
-	for i, job := range c.tasks {
-		if job.filename == fileName {
-			return &c.tasks[i]
-		}
+// func (c *Coordinator) findTask(fileName string) *task {
+// 	for i, job := range c.tasks {
+// 		if job.filename == fileName {
+// 			return &c.tasks[i]
+// 		}
+// 	}
+// 	return nil
+// }
+
+func (c *Coordinator) createMapJobs(files []string) {
+	c.tasks = make([]task, len(files))
+	for i, file := range files {
+		c.tasks[i].files = []string{file}
+		c.tasks[i].taskType = TaskTypeMap
 	}
-	return nil
 }
 
 func (c *Coordinator) createReduceJobs() error {
-	files, err := filepath.Glob("map-output-*")
+	filenames, err := filepath.Glob("m-out-*-*")
 	if err != nil {
 		return fmt.Errorf("createReduceJobs filepath.Glob(\"map-output-*\")")
 	}
 
-	for _, file := range files {
+	m := make(map[string][]string)
+
+	for _, filename := range filenames {
+		// filename format: m-out-<worker-id>-<reducer-id>
+		parts := strings.Split(filename, "-")
+		reduceId := parts[3]
+		m[reduceId] = append(m[reduceId], filename)
+	}
+
+	for _, v := range m {
 		task := task{
-			filename:  file,
-			status:    taskStatusIdle,
-			startTime: time.Now().Unix(),
-			taskType:  TaskTypeReduce,
+			files:    v,
+			status:   taskStatusIdle,
+			taskType: TaskTypeReduce,
 		}
 		c.tasks = append(c.tasks, task)
 		c.numReduceTasks++
@@ -167,6 +184,17 @@ func (c *Coordinator) createReduceJobs() error {
 
 	return nil
 }
+
+// func (c *Coordinator) createShutdownJobs() error {
+// 	for i := 0; i < c.numWorkers; i++ {
+// 		task := task{
+// 			status:   taskStatusIdle,
+// 			taskType: TaskTypeShutdown,
+// 		}
+// 		c.tasks = append(c.tasks, task)
+// 	}
+// 	return nil
+// }
 
 // `main/mrcoordinator.go` calls `Done` periodically to check if the entire job has finished
 func (c *Coordinator) Done() bool {
@@ -184,6 +212,14 @@ func (c *Coordinator) Done() bool {
 	}
 
 	return true
+}
+
+func (c *Coordinator) printTasks() {
+	fmt.Println("tasks ------------------------------")
+	for _, task := range c.tasks {
+		fmt.Printf("%v\n", task)
+	}
+	fmt.Println("end tasks ------------------------------")
 }
 
 // func (c *Coordinator) reAssignJobs() {
