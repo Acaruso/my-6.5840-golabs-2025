@@ -34,10 +34,12 @@ func (r GetTaskReq) String() string {
 }
 
 func (r GetTaskRes) String() string {
-	return fmt.Sprintf("{Files: [%s], NReduce: %d, TaskType: %d}",
+	return fmt.Sprintf(
+		"{Files: [%s], NReduce: %d, TaskType: %d, TaskId: %d}",
 		strings.Join(r.Files, ", "),
 		r.NReduce,
-		r.TaskType)
+		r.TaskType,
+		r.TaskId)
 }
 
 type TaskDoneReq struct {

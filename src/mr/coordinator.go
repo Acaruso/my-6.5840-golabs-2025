@@ -93,10 +93,11 @@ func (c *Coordinator) GetTask(req *GetTaskReq, res *GetTaskRes) error {
 	}
 	task.status = taskStatusInProgress
 	task.startTime = time.Now().Unix()
+	c.workers[req.WorkerId].taskId = taskId
 	res.Files = task.files
 	res.NReduce = c.nReduce
 	res.TaskType = task.taskType
-	c.workers[req.WorkerId].taskId = taskId
+	res.TaskId = taskId
 	return nil
 }
 
@@ -113,9 +114,7 @@ func (c *Coordinator) TaskDone(req *TaskDoneReq, res *TaskDoneRes) error {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
-	// task := c.findTask(req.Filename)
-	task := c.tasks[req.TaskId]
-
+	task := &c.tasks[req.TaskId]
 	task.status = taskStatusCompleted
 
 	switch task.taskType {

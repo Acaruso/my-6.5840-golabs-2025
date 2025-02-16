@@ -85,7 +85,7 @@ func runMapTask(workerId int, files []string, nReduce int, mapf func(string, str
 				return fmt.Errorf("runMapTask OpenFile(%s) %w", outputFilename, err)
 			}
 
-			fmt.Fprintf(outputFile, "%v %v\n", kv.Key, kv.Value)
+			fmt.Fprintf(outputFile, "%v:::%v\n", kv.Key, kv.Value)
 
 			outputFile.Close()
 		}
@@ -119,7 +119,7 @@ func runReduceTask(files []string, reducef func(string, []string) string) error 
 			if line == "" {
 				continue
 			}
-			parts := strings.Split(line, " ")
+			parts := strings.Split(line, ":::")
 			key := parts[0]
 			value := parts[1]
 			m[key] = append(m[key], value)
