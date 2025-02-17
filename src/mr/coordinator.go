@@ -17,7 +17,6 @@ type Coordinator struct {
 	mutex          sync.Mutex
 	tasks          []task
 	workers        []worker
-	filesToIgnore  map[string]bool
 	numMapTasks    int
 	numReduceTasks int
 	phase          phase
@@ -117,10 +116,19 @@ func (c *Coordinator) TaskDone(req *TaskDoneReq, res *TaskDoneRes) error {
 	defer c.mutex.Unlock()
 
 	task := &c.tasks[req.TaskId]
+
+	if task.status == taskStatusTimedOut {
+		return nil
+	}
+
 	task.status = taskStatusCompleted
 
 	switch task.taskType {
 	case TaskTypeMap:
+		err := c.renameTempFiles(req.FilesCreated)
+		if err != nil {
+			return fmt.Errorf("TaskDone renameTempFiles: %w", err)
+		}
 		c.numMapTasks--
 		if c.numMapTasks == 0 {
 			err := c.createReduceJobs()
@@ -130,17 +138,16 @@ func (c *Coordinator) TaskDone(req *TaskDoneReq, res *TaskDoneRes) error {
 			c.phase = phaseReduce
 		}
 	case TaskTypeReduce:
+		err := c.renameTempFiles(req.FilesCreated)
+		if err != nil {
+			return fmt.Errorf("TaskDone renameTempFiles: %w", err)
+		}
 		c.numReduceTasks--
 		if c.numReduceTasks == 0 {
 			c.phase = phaseShutdown
 			// create shutdown jobs
 			// how to know how many to create?
 		}
-	}
-
-	err := c.renameTempFiles(task.files)
-	if err != nil {
-		return fmt.Errorf("TaskDone renameTempFiles: %w", err)
 	}
 
 	return nil
@@ -157,7 +164,7 @@ func (c *Coordinator) createMapJobs(files []string) {
 func (c *Coordinator) createReduceJobs() error {
 	filenames, err := filepath.Glob("m-out-*-*")
 	if err != nil {
-		return fmt.Errorf("createReduceJobs filepath.Glob(\"map-output-*\")")
+		return fmt.Errorf("createReduceJobs filepath.Glob")
 	}
 
 	m := make(map[string][]string)
@@ -182,14 +189,21 @@ func (c *Coordinator) createReduceJobs() error {
 	return nil
 }
 
-func (c *Coordinator) renameTempFiles(filenames []string) error {
-	for _, filename := range filenames {
+func (c *Coordinator) renameTempFiles(filesCreated []string) error {
+	fmt.Println("renameTempFiles")
+
+	for _, filename := range filesCreated {
+		// remove "temp"
 		newFilename := strings.Replace(filename, "temp", "", -1)
+		fmt.Println("filename:", filename)
+		fmt.Println("newFilename:", newFilename)
+
 		err := os.Rename(filename, newFilename)
 		if err != nil {
-			return fmt.Errorf("Failed to rename file %s to %s: %v", filename, newFilename, err)
+			return fmt.Errorf("failed to rename file %s to %s: %v", filename, newFilename, err)
 		}
 	}
+
 	return nil
 }
 
@@ -197,6 +211,8 @@ func (c *Coordinator) renameTempFiles(filenames []string) error {
 func (c *Coordinator) Done() bool {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
+
+	c.timeoutTasks()
 
 	if c.phase == phaseMap {
 		return false
@@ -211,10 +227,19 @@ func (c *Coordinator) Done() bool {
 	return true
 }
 
-func (c *Coordinator) checkTasks() {
-	for _, task := range c.tasks {
-		if time.Now().Unix() > task.startTime+c.timeoutSecs {
-
+func (c *Coordinator) timeoutTasks() {
+	for i, task_ := range c.tasks {
+		if task_.status == taskStatusInProgress && time.Now().Unix() > task_.startTime+c.timeoutSecs {
+			c.tasks[i].status = taskStatusTimedOut
+			newTask := task{
+				files:     task_.files,
+				status:    taskStatusIdle,
+				startTime: 0,
+				taskType:  task_.taskType,
+			}
+			c.tasks = append(c.tasks, newTask)
+			fmt.Println("task timed out:", task_)
+			fmt.Println("time.Now().Unix()", time.Now().Unix())
 		}
 	}
 }

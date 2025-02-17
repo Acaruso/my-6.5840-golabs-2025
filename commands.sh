@@ -8,6 +8,16 @@ if [ "$1" = "test-wc" ]; then
     bash test-mr-wc.sh
 fi
 
+if [ "$1" = "test-job-count" ]; then
+    cd ~/git/6.5840-golabs-2025/src/main
+    bash test-job-count.sh
+fi
+
+if [ "$1" = "test-crash" ]; then
+    cd ~/git/6.5840-golabs-2025/src/main
+    bash test-crash.sh
+fi
+
 if [ "$1" = "clean" ]; then
     cd ~/git/6.5840-golabs-2025/src/main
     rm *-map-output

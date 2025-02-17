@@ -43,15 +43,20 @@ func (r GetTaskRes) String() string {
 }
 
 type TaskDoneReq struct {
-	WorkerId int
-	TaskId   int
+	WorkerId     int
+	TaskId       int
+	FilesCreated []string
 }
 
 type TaskDoneRes struct {
 }
 
 func (r TaskDoneReq) String() string {
-	return fmt.Sprintf("{WorkerId: %d, TaskId: %d}", r.WorkerId, r.TaskId)
+	return fmt.Sprintf(
+		"{WorkerId: %d, TaskId: %d, FilesCreated: [%s]}",
+		r.WorkerId,
+		r.TaskId,
+		strings.Join(r.FilesCreated, ", "))
 }
 
 // create a unique-ish UNIX-domain socket name

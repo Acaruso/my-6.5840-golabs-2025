@@ -87,40 +87,26 @@ echo 'finished building'
 failed_any=0
 
 #########################################################
-# first word-count
+echo '***' Starting job count test.
 
-# generate the correct output
-../mrsequential ../../mrapps/wc.so ../pg*txt || exit 1
-sort mr-out-0 > mr-correct-wc.txt
-rm -f mr-out*
+rm -f mr-*
 
-echo '***' Starting wc test.
-
-maybe_quiet $TIMEOUT ../mrcoordinator ../pg*txt &
-pid=$!
-
-# give the coordinator time to create the sockets.
+maybe_quiet $TIMEOUT ../mrcoordinator ../pg*txt  &
 sleep 1
 
-# start multiple workers.
-(maybe_quiet $TIMEOUT ../mrworker ../../mrapps/wc.so) &
-(maybe_quiet $TIMEOUT ../mrworker ../../mrapps/wc.so) &
-(maybe_quiet $TIMEOUT ../mrworker ../../mrapps/wc.so) &
+maybe_quiet $TIMEOUT ../mrworker ../../mrapps/jobcount.so &
+maybe_quiet $TIMEOUT ../mrworker ../../mrapps/jobcount.so
+maybe_quiet $TIMEOUT ../mrworker ../../mrapps/jobcount.so &
+maybe_quiet $TIMEOUT ../mrworker ../../mrapps/jobcount.so
 
-# wait for the coordinator to exit.
-wait $pid
-
-# since workers are required to exit when a job is completely finished,
-# and not before, that means the job has finished.
-sort mr-out* | grep . > mr-wc-all
-if cmp mr-wc-all mr-correct-wc.txt
+NT=`cat mr-out* | awk '{print $2}'`
+if [ "$NT" -eq "8" ]
 then
-  echo '---' wc test: PASS
+  echo '---' job count test: PASS
 else
-  echo '---' wc output is not the same as mr-correct-wc.txt
-  echo '---' wc test: FAIL
+  echo '---' map jobs ran incorrect number of times "($NT != 8)"
+  echo '---' job count test: FAIL
   failed_any=1
 fi
 
-# wait for remaining workers and coordinator to exit.
 wait
