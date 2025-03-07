@@ -234,7 +234,7 @@ func (c *Coordinator) Done() bool {
 		}
 	}
 
-	c.deleteFiles("m-*")
+	c.deleteFiles("m-out*")
 
 	return true
 }
