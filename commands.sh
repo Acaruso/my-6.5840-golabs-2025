@@ -13,6 +13,11 @@ if [ "$1" = "test-job-count" ]; then
     bash test-job-count.sh
 fi
 
+if [ "$1" = "test-rpjc" ]; then
+    cd ~/git/6.5840-golabs-2025/src/main
+    bash test-rpjc.sh
+fi
+
 if [ "$1" = "test-crash" ]; then
     cd ~/git/6.5840-golabs-2025/src/main
     bash test-crash.sh

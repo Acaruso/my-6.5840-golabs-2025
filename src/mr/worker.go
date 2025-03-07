@@ -26,6 +26,8 @@ func Worker(mapf func(string, string) []KeyValue,
 		log.Fatal("error in rpcRegisterWorker")
 	}
 
+	go heartbeat(workerId)
+
 	for {
 		res, err := rpcGetTask(workerId)
 		if err != nil {
@@ -61,6 +63,19 @@ func Worker(mapf func(string, string) []KeyValue,
 		case TaskTypeShutdown:
 			os.Exit(0)
 		}
+	}
+}
+
+func heartbeat(workerId int) {
+	for {
+		res, err := rpcHeartbeat(workerId)
+		if err != nil {
+			log.Fatalf("Error in rpcHeartbeat: %v", err)
+		}
+		if res.ShouldShutDown {
+			os.Exit(0)
+		}
+		time.Sleep(1 * time.Second)
 	}
 }
 
@@ -235,6 +250,18 @@ func rpcTaskDone(workerId int, taskId int, filesCreated []string) (TaskDoneRes, 
 
 	fmt.Printf("rpcTaskDone res: %v\n", res)
 
+	return res, nil
+}
+
+func rpcHeartbeat(workerId int) (HeartbeatRes, error) {
+	req := HeartbeatReq{
+		WorkerId: workerId,
+	}
+	res := HeartbeatRes{}
+	ok := call("Coordinator.Heartbeat", &req, &res)
+	if !ok {
+		return HeartbeatRes{}, fmt.Errorf("rpcHeartbeat failed")
+	}
 	return res, nil
 }
 

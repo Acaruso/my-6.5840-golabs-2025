@@ -51,6 +51,14 @@ type TaskDoneReq struct {
 type TaskDoneRes struct {
 }
 
+type HeartbeatReq struct {
+	WorkerId int
+}
+
+type HeartbeatRes struct {
+	ShouldShutDown bool
+}
+
 func (r TaskDoneReq) String() string {
 	return fmt.Sprintf(
 		"{WorkerId: %d, TaskId: %d, FilesCreated: [%s]}",

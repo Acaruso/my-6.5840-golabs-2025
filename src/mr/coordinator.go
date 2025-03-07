@@ -51,7 +51,8 @@ const (
 )
 
 type worker struct {
-	taskId int
+	taskId    int
+	isRunning bool
 }
 
 type phase int
@@ -80,7 +81,7 @@ func (c *Coordinator) RegisterWorker(req *RegisterWorkerReq, res *RegisterWorker
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	res.WorkerId = len(c.workers)
-	c.workers = append(c.workers, worker{})
+	c.workers = append(c.workers, worker{isRunning: true})
 	return nil
 }
 
@@ -216,15 +217,24 @@ func (c *Coordinator) Done() bool {
 
 	c.timeoutTasks()
 
-	if c.phase == phaseMap {
+	switch c.phase {
+	case phaseMap:
 		return false
-	}
-
-	for _, task := range c.tasks {
-		if task.status == taskStatusIdle || task.status == taskStatusInProgress {
-			return false
+	case phaseReduce:
+		for _, task := range c.tasks {
+			if task.status == taskStatusIdle || task.status == taskStatusInProgress {
+				return false
+			}
+		}
+	case phaseShutdown:
+		for _, worker := range c.workers {
+			if worker.isRunning {
+				return false
+			}
 		}
 	}
+
+	c.deleteFiles("m-*")
 
 	return true
 }
@@ -244,6 +254,30 @@ func (c *Coordinator) timeoutTasks() {
 			fmt.Println("time.Now().Unix()", time.Now().Unix())
 		}
 	}
+}
+
+func (c *Coordinator) deleteFiles(pattern string) error {
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return fmt.Errorf("failed to find files matching pattern %s: %w", pattern, err)
+	}
+	for _, file := range matches {
+		err := os.Remove(file)
+		if err != nil {
+			return fmt.Errorf("failed to remove file %s: %w", file, err)
+		}
+	}
+	return nil
+}
+
+func (c *Coordinator) Heartbeat(req *HeartbeatReq, res *HeartbeatRes) error {
+	if c.phase == phaseShutdown {
+		res.ShouldShutDown = true
+		c.workers[req.WorkerId].isRunning = false
+	} else {
+		res.ShouldShutDown = false
+	}
+	return nil
 }
 
 // start a thread that listens for RPCs from `worker.go`
