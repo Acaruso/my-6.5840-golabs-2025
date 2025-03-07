@@ -56,7 +56,7 @@ func Worker(mapf func(string, string) []KeyValue,
 				// TOOD: handle error
 				log.Fatal("error in rpcTaskDone")
 			}
-		case TaskTypeNoJob:
+		case TaskTypeNoTask:
 			time.Sleep(5 * time.Second)
 		case TaskTypeShutdown:
 			os.Exit(0)
@@ -72,35 +72,35 @@ func runMapTask(
 ) ([]string, error) {
 	fmt.Println("runMapTask")
 
-	filesMap := make(map[string]bool)
+	filesCreatedMap := make(map[string]bool)
 
-	for _, filename := range files {
-		content, err := getFileContent(filename)
+	for _, inFilename := range files {
+		content, err := getFileContent(inFilename)
 		if err != nil {
-			return []string{}, fmt.Errorf("runMapTask getFileContent(%s): %w", filename, err)
+			return []string{}, fmt.Errorf("runMapTask getFileContent(%s): %w", inFilename, err)
 		}
 
-		outputKv := mapf(filename, content)
+		outputKv := mapf(inFilename, content)
 
 		for _, kv := range outputKv {
-			// filename format: m-out-<task-id>-<reducer-id>
-			outputFilename := fmt.Sprintf("tempm-out-%d-%d", taskId, ihash(kv.Key)%nReduce)
+			// filename format: tempm-out-<task-id>-<reducer-id>
+			outFilename := fmt.Sprintf("tempm-out-%d-%d", taskId, ihash(kv.Key)%nReduce)
 
-			filesMap[outputFilename] = true
+			filesCreatedMap[outFilename] = true
 
 			// open file and create if it doesn't exist yet
-			outputFile, err := os.OpenFile(outputFilename, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0666)
+			outFile, err := os.OpenFile(outFilename, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0666)
 			if err != nil {
-				return []string{}, fmt.Errorf("runMapTask OpenFile(%s) %w", outputFilename, err)
+				return []string{}, fmt.Errorf("runMapTask OpenFile(%s) %w", outFilename, err)
 			}
 
-			fmt.Fprintf(outputFile, "%v:::%v\n", kv.Key, kv.Value)
+			fmt.Fprintf(outFile, "%v:::%v\n", kv.Key, kv.Value)
 
-			outputFile.Close()
+			outFile.Close()
 		}
 	}
 
-	return filesMapToSlice(filesMap), nil
+	return mapKeysToSlice(filesCreatedMap), nil
 }
 
 func runReduceTask(files []string, reducef func(string, []string) string) ([]string, error) {
@@ -151,7 +151,7 @@ func runReduceTask(files []string, reducef func(string, []string) string) ([]str
 		outputFile.Close()
 	}
 
-	return filesMapToSlice(filesMap), nil
+	return mapKeysToSlice(filesMap), nil
 }
 
 func getFileContent(filename string) (string, error) {
@@ -169,12 +169,12 @@ func getFileContent(filename string) (string, error) {
 	return string(content), nil
 }
 
-func filesMapToSlice(filesMap map[string]bool) []string {
-	var outputFilenames []string
-	for filename := range filesMap {
-		outputFilenames = append(outputFilenames, filename)
+func mapKeysToSlice[T any](m map[string]T) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
 	}
-	return outputFilenames
+	return keys
 }
 
 // to choose the reduce task number for each `KeyValue` emitted by `Map`, do `ihash(key) % NReduce`

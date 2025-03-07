@@ -46,7 +46,7 @@ type TaskType int
 const (
 	TaskTypeMap TaskType = iota
 	TaskTypeReduce
-	TaskTypeNoJob
+	TaskTypeNoTask
 	TaskTypeShutdown
 )
 
@@ -67,7 +67,7 @@ const (
 // `nReduce` is the number of reduce tasks to use
 func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	c := Coordinator{}
-	c.createMapJobs(files)
+	c.createMapTasks(files)
 	c.numMapTasks = len(c.tasks)
 	c.nReduce = nReduce
 	c.phase = phaseMap
@@ -77,8 +77,10 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 }
 
 func (c *Coordinator) RegisterWorker(req *RegisterWorkerReq, res *RegisterWorkerRes) error {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	res.WorkerId = len(c.workers)
 	c.workers = append(c.workers, worker{})
-	res.WorkerId = len(c.workers) - 1
 	return nil
 }
 
@@ -88,7 +90,7 @@ func (c *Coordinator) GetTask(req *GetTaskReq, res *GetTaskRes) error {
 
 	taskId, task := c.findIdleTask()
 	if task == nil {
-		res.TaskType = TaskTypeNoJob
+		res.TaskType = TaskTypeNoTask
 		c.workers[req.WorkerId].taskId = taskId
 		return nil
 	}
@@ -131,9 +133,9 @@ func (c *Coordinator) TaskDone(req *TaskDoneReq, res *TaskDoneRes) error {
 		}
 		c.numMapTasks--
 		if c.numMapTasks == 0 {
-			err := c.createReduceJobs()
+			err := c.createReduceTasks()
 			if err != nil {
-				return fmt.Errorf("TaskDone createReduceJobs: %w", err)
+				return fmt.Errorf("TaskDone createReduceTasks: %w", err)
 			}
 			c.phase = phaseReduce
 		}
@@ -145,7 +147,7 @@ func (c *Coordinator) TaskDone(req *TaskDoneReq, res *TaskDoneRes) error {
 		c.numReduceTasks--
 		if c.numReduceTasks == 0 {
 			c.phase = phaseShutdown
-			// create shutdown jobs
+			// create shutdown tasks
 			// how to know how many to create?
 		}
 	}
@@ -153,7 +155,7 @@ func (c *Coordinator) TaskDone(req *TaskDoneReq, res *TaskDoneRes) error {
 	return nil
 }
 
-func (c *Coordinator) createMapJobs(files []string) {
+func (c *Coordinator) createMapTasks(files []string) {
 	c.tasks = make([]task, len(files))
 	for i, file := range files {
 		c.tasks[i].files = []string{file}
@@ -161,16 +163,16 @@ func (c *Coordinator) createMapJobs(files []string) {
 	}
 }
 
-func (c *Coordinator) createReduceJobs() error {
+func (c *Coordinator) createReduceTasks() error {
 	filenames, err := filepath.Glob("m-out-*-*")
 	if err != nil {
-		return fmt.Errorf("createReduceJobs filepath.Glob")
+		return fmt.Errorf("createReduceTasks filepath.Glob")
 	}
 
 	m := make(map[string][]string)
 
 	for _, filename := range filenames {
-		// filename format: m-out-<worker-id>-<reducer-id>
+		// filename format: m-out-<task-id>-<reducer-id>
 		parts := strings.Split(filename, "-")
 		reduceId := parts[3]
 		m[reduceId] = append(m[reduceId], filename)
