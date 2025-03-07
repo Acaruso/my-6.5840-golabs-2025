@@ -178,9 +178,9 @@ func (c *Coordinator) createReduceTasks() error {
 		m[reduceId] = append(m[reduceId], filename)
 	}
 
-	for _, v := range m {
+	for _, files := range m {
 		task := task{
-			files:    v,
+			files:    files,
 			status:   taskStatusIdle,
 			taskType: TaskTypeReduce,
 		}
