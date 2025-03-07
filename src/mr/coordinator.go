@@ -121,6 +121,12 @@ func (c *Coordinator) TaskDone(req *TaskDoneReq, res *TaskDoneRes) error {
 	task := &c.tasks[req.TaskId]
 
 	if task.status == taskStatusTimedOut {
+		for _, file := range req.FilesCreated {
+			err := os.Remove(file)
+			if err != nil {
+				return fmt.Errorf("TaskDone os.Remove: %w", err)
+			}
+		}
 		return nil
 	}
 
