@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"6.5840/kvsrv1"
+	kvsrv "6.5840/kvsrv1"
 	"6.5840/kvsrv1/rpc"
-	"6.5840/kvtest1"
+	kvtest "6.5840/kvtest1"
 )
 
 const (
@@ -67,9 +67,13 @@ func runClients(t *testing.T, nclnt int, reliable bool) {
 
 	ts.Begin(fmt.Sprintf("Test: %d lock clients", nclnt))
 
-	ts.SpawnClientsAndWait(nclnt, NSEC*time.Second, func(me int, myck kvtest.IKVClerk, done chan struct{}) kvtest.ClntRes {
-		return oneClient(t, me, myck, done)
-	})
+	ts.SpawnClientsAndWait(
+		nclnt,
+		NSEC*time.Second,
+		func(me int, myck kvtest.IKVClerk, done chan struct{}) kvtest.ClntRes {
+			return oneClient(t, me, myck, done)
+		},
+	)
 }
 
 func TestOneClientReliable(t *testing.T) {
