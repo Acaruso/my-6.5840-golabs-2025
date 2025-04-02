@@ -1,6 +1,8 @@
 package kvsrv
 
 import (
+	"time"
+
 	"6.5840/kvsrv1/rpc"
 	kvtest "6.5840/kvtest1"
 	tester "6.5840/tester1"
@@ -13,7 +15,6 @@ type Clerk struct {
 
 func MakeClerk(clnt *tester.Clnt, server string) kvtest.IKVClerk {
 	ck := &Clerk{clnt: clnt, server: server}
-	// You may add code here.
 	return ck
 }
 
@@ -24,14 +25,21 @@ func (ck *Clerk) Get(key string) (string, rpc.Tversion, rpc.Err) {
 	args := rpc.GetArgs{
 		Key: key,
 	}
+
 	reply := rpc.GetReply{}
+
 	ok := ck.clnt.Call(ck.server, "KVServer.Get", &args, &reply)
-	if !ok {
-		// TODO: what error type to return?
+
+	// retry until success
+	for !ok {
+		time.Sleep(100 * time.Millisecond)
+		ok = ck.clnt.Call(ck.server, "KVServer.Get", &args, &reply)
 	}
+
 	if reply.Err != rpc.OK {
 		return "", 0, reply.Err
 	}
+
 	return reply.Value, reply.Version, rpc.OK
 }
 
@@ -51,10 +59,22 @@ func (ck *Clerk) Put(key string, value string, version rpc.Tversion) rpc.Err {
 		Value:   value,
 		Version: version,
 	}
+
 	reply := rpc.PutReply{}
+
 	ok := ck.clnt.Call(ck.server, "KVServer.Put", &args, &reply)
-	if !ok {
-		// TODO: handle this
+
+	// retry until success
+	retried := false
+	for !ok {
+		time.Sleep(100 * time.Millisecond)
+		ok = ck.clnt.Call(ck.server, "KVServer.Put", &args, &reply)
+		retried = true
 	}
+
+	if reply.Err == rpc.ErrVersion && retried {
+		return rpc.ErrMaybe
+	}
+
 	return reply.Err
 }
