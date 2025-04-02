@@ -83,18 +83,6 @@ func (kv *KVServer) Put(args *rpc.PutArgs, reply *rpc.PutReply) {
 	reply.Err = rpc.OK
 }
 
-// func (kv *KVServer) start() {
-// 	rpc.Register(kv)
-// 	rpc.HandleHTTP()
-// 	sockname := rpc.sockname
-// 	os.Remove(sockname)
-// 	l, e := net.Listen("unix", sockname)
-// 	if e != nil {
-// 		log.Fatal("listen error:", e)
-// 	}
-// 	go http.Serve(l, nil)
-// }
-
 // You can ignore Kill() for this lab
 func (kv *KVServer) Kill() {
 }
